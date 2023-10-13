@@ -1013,6 +1013,7 @@ def parse_args(args: list[str] | None = None) -> Namespace:
     init_parser.add_argument("--locales", required=no_ucr_available, default=ucr.get("locale"))
     init_parser.add_argument("--default-locale", required=no_ucr_available, default=ucr.get("locale/default"))
     init_parser.add_argument("--check-init-done", help="only check if init has been already executed", default=False, action="store_true")
+    init_parser.add_argument("--no-starttls", action='store_false', default=True, help="Disables the usage of StartTLS in the communication with the LDAP server, unencrypted traffic will be used.")
     init_parser.set_defaults(func=init_keycloak_ucs)
 
     kerberos_config = subparsers.add_parser("kerberos-config", help="LDAP federation Kerberos configuration")
@@ -2260,7 +2261,7 @@ def init_keycloak_ucs(opt):
         "config": {
             "pagination": ["true"],
             "fullSyncPeriod": ["-1"],
-            "startTls": ["true"],
+            "startTls": [opt.no_starttls],
             "connectionPooling": ["true"],
             "usersDn": [opt.ldap_base],
             "cachePolicy": ["MAX_LIFESPAN"],
