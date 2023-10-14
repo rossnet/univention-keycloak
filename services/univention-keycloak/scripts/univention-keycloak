@@ -1013,7 +1013,11 @@ def parse_args(args: list[str] | None = None) -> Namespace:
     init_parser.add_argument("--locales", required=no_ucr_available, default=ucr.get("locale"))
     init_parser.add_argument("--default-locale", required=no_ucr_available, default=ucr.get("locale/default"))
     init_parser.add_argument("--check-init-done", help="only check if init has been already executed", default=False, action="store_true")
+    # Was statically "True" before:
     init_parser.add_argument("--no-starttls", action='store_false', default=True, help="Disables the usage of StartTLS in the communication with the LDAP server, unencrypted traffic will be used.")
+    #opt.assertion_consumer_url_post = None
+    init_parser.add_argument("--assertion-consumer-url-post", help=f"set the valid redirect URL for the UCS SAML service provider, most likely https://{domainname}/univention/saml/")
+
     init_parser.set_defaults(func=init_keycloak_ucs)
 
     kerberos_config = subparsers.add_parser("kerberos-config", help="LDAP federation Kerberos configuration")
@@ -2242,7 +2246,6 @@ def init_keycloak_ucs(opt):
     opt.metadata_file = None
     opt.umc_uid_mapper = True
     opt.single_logout_service_url_post = None
-    opt.assertion_consumer_url_post = None
     opt.frontchannel_logout_off = None
     opt.name_id_format = None
     opt.idp_initiated_sso_url_name = None
