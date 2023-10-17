@@ -1015,6 +1015,8 @@ def parse_args(args: list[str] | None = None) -> Namespace:
     init_parser.add_argument("--check-init-done", help="only check if init has been already executed", default=False, action="store_true")
     # Was statically "True" before:
     init_parser.add_argument("--no-starttls", action='store_false', default=True, help="Disables the usage of StartTLS in the communication with the LDAP server, unencrypted traffic will be used.")
+    # Was statically "True" before:
+    init_parser.add_argument("--no-kerberos", action='store_false', default=True, help="Disables the Kerberos support on the LDAP user federation.")
     # opt.assertion_consumer_url_post = None
     init_parser.add_argument("--assertion-consumer-url-post", help=f"set the valid redirect URL for the UCS SAML service provider, most likely https://{domainname}/univention/saml/")
     init_parser.set_defaults(func=init_keycloak_ucs)
@@ -2277,7 +2279,7 @@ def init_keycloak_ucs(opt):
             "usernameLDAPAttribute": ["uid"],
             "vendor": ["other"],
             "uuidLDAPAttribute": ["entryUUID"],
-            "allowKerberosAuthentication": ["true"],
+            "allowKerberosAuthentication": [opt.no_kerberos],
             "kerberosRealm": [opt.kerberos_realm],
             "serverPrincipal": [f"HTTP/{opt.keycloak_fqdn}@{opt.kerberos_realm}"],
             "keyTab": [KERBEROS_KEYTAB_PATH],
