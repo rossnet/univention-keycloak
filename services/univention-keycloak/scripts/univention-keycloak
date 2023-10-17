@@ -571,6 +571,13 @@ def create_oidc_client(opt):
     server_url = f"https://{opt.host_fqdn}"
     valid_redirect_urls = [opt.app_url, server_url] + opt.redirect_uri if opt.redirect_uri else [opt.app_url, server_url]
 
+    print("! my backchannel logout url: "+opt.backchannel_logout_url)
+
+    # Ensure frontchannel logout is only enabled when no backchannel logout is configured.
+    frontchannel_logout = True
+    if not opt.frontchannel_logout_url or opt.backchannel_logout_url:
+        frontchannel_logout = False
+
     # authentication flow
     authentication_flow_binding_overrides = {}
     auth_flow = opt.auth_browser_flow
@@ -602,19 +609,21 @@ def create_oidc_client(opt):
         "directAccessGrantsEnabled": opt.direct_access_grants,
         "serviceAccountsEnabled": opt.service_accounts_enabled,
         "publicClient": False,
-        "frontchannelLogout": not opt.no_frontchannel_logout,
+        "frontchannelLogout": frontchannel_logout,
         "protocol": "openid-connect",
         "attributes": {
             "access.token.lifespan": opt.access_token_lifespan,
             "saml.multivalued.roles": "false",
             "saml.force.post.binding": "false",
+            "frontchannel.logout.url": opt.frontchannel_logout_url,
             "frontchannel.logout.session.required": "false",
             "oauth2.device.authorization.grant.enabled": "false",
-            "backchannel.logout.revoke.offline.tokens": "false",
             "saml.server.signature.keyinfo.ext": "false",
             "use.refresh.tokens": "true",
             "oidc.ciba.grant.enabled": "false",
-            "backchannel.logout.session.required": "false",
+            "backchannel.logout.url": opt.backchannel_logout_url,
+            "backchannel.logout.session.required": "true" if opt.backchannel_logout_url else "false",
+            "backchannel.logout.revoke.offline.tokens": "true" if opt.backchannel_logout_url else "false",
             "client_credentials.use_refresh_token": "false",
             "saml.client.signature": "false",
             "require.pushed.authorization.requests": "false",
@@ -893,6 +902,7 @@ def parse_args(args: list[str] | None = None) -> Namespace:
     create_saml_parser.add_argument("--single-logout-service-url-post", default=None)
     create_saml_parser.add_argument("--idp-initiated-sso-url-name", default=None)
     create_saml_parser.add_argument("--name-id-format", default="transient")
+    # Isn't that the same option as the "no-frontchannel-logout" in the OIDC client, wouldn't it be great to have also the same name or does that cause collisions with the CLI argument processor?
     create_saml_parser.add_argument("--frontchannel-logout-off", default=False, action="store_true", help="Switch off frontchannelLogout")
     create_saml_parser.add_argument("--description", help="Description of the client")
     create_saml_parser.add_argument("--policy-url", help="URL that the client provides to the end-user to read about the how the profile data will be used")
@@ -976,7 +986,12 @@ def parse_args(args: list[str] | None = None) -> Namespace:
     create_oidc_parser.add_argument("--allow-implicit-flow", action='store_true', help="enables support of 'Implicit Flow' for this client.")
     create_oidc_parser.add_argument("--access-token-lifespan", help="Max time before an access token is expired.")
     create_oidc_parser.add_argument("--service-accounts-enabled", action='store_true')
-    create_oidc_parser.add_argument("--no-frontchannel-logout", action='store_false', default=True)
+    # I don't see a "frontchannel-logout" URL option for the oidc_client so how should the Frontchannel logout work anyway?
+    #create_oidc_parser.add_argument("--no-frontchannel-logout", action='store_false', default=True)
+    create_oidc_parser.add_argument("--frontchannel-logout-url", default=None, help="The OIDC client's URL to trigger for frontchannel logout, if backchannel logout is also defined we only configure backchannel logout.") # action='append',
+    # But we also want to support backchannel logout, so it's activated automatically by providing a URL
+    create_oidc_parser.add_argument("--backchannel-logout-url", default=None, help="The OIDC client's URL to trigger its backchannel logout.") # action='append',
+
     create_oidc_parser.add_argument("--auth-browser-flow", help="Override realm authentication flow bindings for 'Browser Flow'.", default=None)
     create_oidc_parser.add_argument("--add-audience-mapper", action='store_true', default=False, help="Add a audience mapper to add audience to access token.")
     create_oidc_parser.set_defaults(func=create_oidc_client)
