@@ -569,7 +569,7 @@ def create_oidc_client(opt):
 
     # build urls
     server_url = f"https://{opt.host_fqdn}"
-    valid_redirect_urls = [opt.app_url, server_url] + opt.redirect_uri if opt.redirect_uri else [opt.app_url, server_url]
+    valid_redirect_urls = [opt.app_url, server_url+'/*'] + opt.redirect_uri if opt.redirect_uri else [opt.app_url, server_url+'/*']
 
     print("! my backchannel logout url: "+opt.backchannel_logout_url)
 
