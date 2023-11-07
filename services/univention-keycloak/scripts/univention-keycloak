@@ -71,6 +71,7 @@ URL_ADMIN_REQUIRED_ACTIONS = URL_ADMIN_REALM + "/authentication/required-actions
 URL_ADMIN_REQUIRED_ACTION_REGISTER = URL_ADMIN_REALM + "/authentication/register-required-action"
 DEFAULT_EXTENTIONS = ["password", "ldapmapper", "self-service"]
 DEFAULT_USER_STORAGE_PROVIDER_NAME = "ldap-provider"
+DEFAULT_USER_STORAGE_PROVIDER_ID = "ldap"
 KERBEROS_KEYTAB_PATH = "/var/lib/univention-appcenter/apps/keycloak/conf/keycloak.keytab"
 LEGACY_APP_AUTHORIZATION_NAME = "flow with legacy app authorization"
 LOGIN_LINKS = 12
@@ -231,7 +232,7 @@ class UniventionKeycloakAdmin(KeycloakAdmin):
         }
         self.create_authentication_flow_subflow(payload=json.dumps(_payload), flow_alias=flow_alias)
         executions = self.get_authentication_flow_executions(flow_alias=flow_alias)
-        flow = [x for x in executions if x.get("displayName") == payload["displayName"]][0]
+        flow = [x for x in executions if x.get("displayName") == payload["displayName"]][0]  # noqa: RUF015
         payload["id"] = flow["id"]
         del payload["type"]
         try:
@@ -244,7 +245,7 @@ class UniventionKeycloakAdmin(KeycloakAdmin):
         _payload = {"provider": payload.get("providerId")}
         self.create_authentication_flow_execution(payload=json.dumps(_payload), flow_alias=flow_alias)
         executions = self.get_authentication_flow_executions(flow_alias=flow_alias)
-        execution = [x for x in executions if x.get("providerId") == payload.get("providerId")][0]
+        execution = [x for x in executions if x.get("providerId") == payload.get("providerId")][0]  # noqa: RUF015
         payload["id"] = execution["id"]
         try:
             self.update_authentication_flow_executions(payload=json.dumps(payload), flow_alias=flow_alias)
@@ -307,6 +308,7 @@ class ExtService(object):
         params = {"providerId": alias, "name": name}
         mapper = self._kc_admin.get_components(params)
         if not mapper:
+            # Shouldn't the provideId be "ldap" and not "ldap-provider"?
             params = {"providerId": "ldap-provider", "name": "ldap-provider"}
             parent = self._realm_components(realm, params)
             if not parent:
@@ -569,12 +571,10 @@ def create_oidc_client(opt):
 
     # build urls
     server_url = f"https://{opt.host_fqdn}"
-    valid_redirect_urls = [opt.app_url+'/*', server_url+'/*'] + opt.redirect_uri if opt.redirect_uri else [opt.app_url+'/*', server_url+'/*']
+    valid_redirect_urls = [opt.app_url + '/*', server_url + '/*'] + opt.redirect_uri if opt.redirect_uri else [opt.app_url + '/*', server_url + '/*']
 
     # Ensure frontchannel logout is only enabled when no backchannel logout is configured.
-    frontchannel_logout = True
-    if not opt.frontchannel_logout_url or opt.backchannel_logout_url:
-        frontchannel_logout = False
+    frontchannel_logout = bool(opt.frontchannel_logout_url and not opt.backchannel_logout_url)
 
     # authentication flow
     authentication_flow_binding_overrides = {}
@@ -610,7 +610,7 @@ def create_oidc_client(opt):
         "frontchannelLogout": frontchannel_logout,
         "protocol": "openid-connect",
         "attributes": {
-            "access.token.lifespan": opt.access_token_lifespan,
+            "access.token.lifespan": "" if opt.access_token_lifespan else opt.access_token_lifespan,
             "saml.multivalued.roles": "false",
             "saml.force.post.binding": "false",
             "frontchannel.logout.url": opt.frontchannel_logout_url,
@@ -688,19 +688,8 @@ def create_oidc_client(opt):
                 },
             },
         ],
-        "defaultClientScopes": [
-            "web-origins",
-            "acr",
-            "profile",
-            "roles",
-            "email",
-        ],
-        "optionalClientScopes": [
-            "address",
-            "phone",
-            "offline_access",
-            "microprofile-jwt",
-        ],
+        "defaultClientScopes": [ opt.default_client_scopes ],
+        "optionalClientScopes": [ opt.optional_client_scopes ],
         "access": {
             "view": True,
             "configure": True,
@@ -735,7 +724,7 @@ def modify_client_scope_mapper(opt):
     kc_admin = KeycloakAdmin(server_url=opt.keycloak_url, username=opt.binduser, password=opt.bindpwd, realm_name=opt.realm, user_realm_name=DEFAULT_REALM, verify=opt.no_ssl_verify)
 
     scopes = kc_admin.get_client_scopes()
-    id_role_list = [scope["id"] for scope in scopes if scope["name"] == "role_list"][0]
+    id_role_list = [scope["id"] for scope in scopes if scope["name"] == "role_list"][0]  # noqa: RUF015
 
     scope_id = id_role_list
     data_raw = kc_admin.raw_get(
@@ -743,8 +732,8 @@ def modify_client_scope_mapper(opt):
     )
     mappers = data_raw.json()
 
-    mapper_test = [mapper for mapper in mappers if mapper["name"] == "role list"][0]
-    id_mapper_role_list = [mapper["id"] for mapper in mappers if mapper["name"] == "role list"][0]
+    mapper_test = [mapper for mapper in mappers if mapper["name"] == "role list"][0]  # noqa: RUF015
+    id_mapper_role_list = [mapper["id"] for mapper in mappers if mapper["name"] == "role list"][0]  # noqa: RUF015
 
     mapper_test["config"]["single"] = True
 
@@ -983,14 +972,15 @@ def parse_args(args: list[str] | None = None) -> Namespace:
     create_oidc_parser.add_argument("--redirect-uri", action='append', help="Valid redirect URIs.")
     create_oidc_parser.add_argument("--direct-access-grants", help='enable "Direct access grants" flow (default: False)', default=False, action="store_true")
     create_oidc_parser.add_argument("--allow-implicit-flow", action='store_true', help="enables support of 'Implicit Flow' for this client.")
-    create_oidc_parser.add_argument("--access-token-lifespan", help="Max time before an access token is expired.")
+    create_oidc_parser.add_argument("--access-token-lifespan", type=int, help="Max time before an access token is expired in Seconds. This value is recommended to be short relative to the SSO timeout. If not provided realm default will be used")
+    create_oidc_parser.add_argument("--default-client-scopes", type=str, nargs="*", default="web-origins,acr,profile,roles,email", help="Configure the default client scopes if you require a different setup than the UMS standard/default")
+    create_oidc_parser.add_argument("--optional-client-scopes", type=str, nargs="*", default="address,phone,offline_access,microprofile-jwt", help="Configure the optional client scopes if you require a different setup than the UMS standard/default")
     create_oidc_parser.add_argument("--service-accounts-enabled", action='store_true')
     # I don't see a "frontchannel-logout" URL option for the oidc_client so how should the Frontchannel logout work anyway?
     #create_oidc_parser.add_argument("--no-frontchannel-logout", action='store_false', default=True)
     create_oidc_parser.add_argument("--frontchannel-logout-url", default=None, help="The OIDC client's URL to trigger for frontchannel logout, if backchannel logout is also defined we only configure backchannel logout.") # action='append',
     # But we also want to support backchannel logout, so it's activated automatically by providing a URL
     create_oidc_parser.add_argument("--backchannel-logout-url", default=None, help="The OIDC client's URL to trigger its backchannel logout.") # action='append',
-
     create_oidc_parser.add_argument("--auth-browser-flow", help="Override realm authentication flow bindings for 'Browser Flow'.", default=None)
     create_oidc_parser.add_argument("--add-audience-mapper", action='store_true', default=False, help="Add a audience mapper to add audience to access token.")
     create_oidc_parser.set_defaults(func=create_oidc_client)
@@ -1811,7 +1801,7 @@ def enable_2fa(opt):
     mapper_id = add_or_replace_ldap_group_mapper(opt, kc_admin, provider, "univention-groups", ldap_2fa_group)
 
     # Synchronize LDAP groups to Keycloak
-    kc_admin.raw_post(f'/admin/realms/{opt.realm}/user-storage/{provider_id}/mappers/{mapper_id}/sync?direction=fedToKeycloak', data={})
+    kc_admin.raw_post(f'/admin/realms/{quote(opt.realm, safe="")}/user-storage/{quote(provider_id, safe="")}/mappers/{quote(mapper_id, safe="")}/sync?direction=fedToKeycloak', data={})
 
     create_realm_role(kc_admin, opt.realm, realm_2fa_role)
     create_realm_group(kc_admin, opt.realm, ldap_2fa_group)  # FIXME: This could be removed if we only use UDM groups
@@ -1921,13 +1911,13 @@ def assign_group_realm_role_by_group_name(kc_admin, realm, group_name, role):
         print("Warning: Groupname does not exist, realm role can not be linked")
         return
     try:
-        group_id = [g["id"] for g in groups if g["name"] == group_name][0]
+        group_id = [g["id"] for g in groups if g["name"] == group_name][0]  # noqa: RUF015
     except IndexError:
         group_id = None  # why is group ID allowed to be none?
 
     # get role id
     try:
-        realm_role_id = [r["id"] for r in kc_admin.get_realm_roles() if r["name"] == role][0]
+        realm_role_id = [r["id"] for r in kc_admin.get_realm_roles() if r["name"] == role][0]  # noqa: RUF015
     except IndexError:
         print(f"WARNING: role {role} does not exist")
         return
@@ -2161,7 +2151,7 @@ def create_adhoc_flow(opt):
     kc_admin.create_authentication_flow_execution(payload=json.dumps(payload_exec_flow), flow_alias='Univention-Authenticator ad hoc federation flow')
 
     execution_list = kc_admin.get_authentication_flow_executions("Univention-Authenticator ad hoc federation flow")
-    ua_execution = [flow for flow in execution_list if flow["displayName"] == "Univention Authenticator"][0]
+    ua_execution = [flow for flow in execution_list if flow["displayName"] == "Univention Authenticator"][0]  # noqa: RUF015
     payload_exec_flow = {
         "id": ua_execution["id"],
         "requirement": "REQUIRED",
@@ -2275,14 +2265,14 @@ def init_keycloak_ucs(opt):
 
     # user federation ldap provider payload
     ldap_federation_payload = {
-        "name": "ldap-provider",
-        "providerId": "ldap",
+        "name": DEFAULT_USER_STORAGE_PROVIDER_NAME,
+        "providerId": DEFAULT_USER_STORAGE_PROVIDER_ID,
         "providerType": "org.keycloak.storage.UserStorageProvider",
         "parentId": get_realm_id(kc_admin, opt.realm),
         "config": {
             "pagination": ["true"],
             "fullSyncPeriod": ["-1"],
-            "startTls": [opt.no_starttls],
+            "startTls": ["true" if opt.no_starttls else "false"],
             "connectionPooling": ["true"],
             "usersDn": [opt.ldap_base],
             "cachePolicy": ["MAX_LIFESPAN"],
@@ -2296,7 +2286,7 @@ def init_keycloak_ucs(opt):
             "usernameLDAPAttribute": ["uid"],
             "vendor": ["other"],
             "uuidLDAPAttribute": ["entryUUID"],
-            "allowKerberosAuthentication": [opt.no_kerberos],
+            "allowKerberosAuthentication": ["true" if opt.no_kerberos else "false"],
             "kerberosRealm": [opt.kerberos_realm],
             "serverPrincipal": [f"HTTP/{opt.keycloak_fqdn}@{opt.kerberos_realm}"],
             "keyTab": [KERBEROS_KEYTAB_PATH],
