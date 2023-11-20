@@ -516,6 +516,8 @@ def create_SAML_client(opt):
             "manage": True,
         },
     }
+    if opt.name:
+        client_payload_saml['name'] = opt.name
 
     default_uid_mapper = [
         {
@@ -890,7 +892,7 @@ def parse_args(args: list[str] | None = None) -> Namespace:
     create_saml_parser.add_argument("--single-logout-service-url-post", default=None)
     create_saml_parser.add_argument("--idp-initiated-sso-url-name", default=None)
     create_saml_parser.add_argument("--name-id-format", default="transient")
-    # Isn't that the same option as the "no-frontchannel-logout" in the OIDC client, wouldn't it be great to have also the same name or does that cause collisions with the CLI argument processor?
+    # Isn't that the same option as the "no-frontchannel-logout" in the OIDC client, wouldn't it be great to have also the same name?
     create_saml_parser.add_argument("--frontchannel-logout-off", default=False, action="store_true", help="Switch off frontchannelLogout")
     create_saml_parser.add_argument("--description", help="Description of the client")
     create_saml_parser.add_argument("--policy-url", help="URL that the client provides to the end-user to read about the how the profile data will be used")
@@ -2254,9 +2256,10 @@ def init_keycloak_ucs(opt):
     opt.metadata_file = None
     opt.umc_uid_mapper = True
     opt.single_logout_service_url_post = None
-    opt.frontchannel_logout_off = None
+    opt.frontchannel_logout_off = True
     opt.name_id_format = None
     opt.idp_initiated_sso_url_name = None
+    opt.name = "UMC"
     opt.description = "Univention Management Console"
     opt.valid_redirect_uris = None
     opt.not_enabled = False
