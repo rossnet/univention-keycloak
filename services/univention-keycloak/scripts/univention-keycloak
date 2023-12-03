@@ -1025,6 +1025,8 @@ def parse_args(args: list[str] | None = None) -> Namespace:
     init_parser.add_argument("--no-kerberos", action='store_false', default=True, help="Disables the Kerberos support on the LDAP user federation.")
     # opt.assertion_consumer_url_post = None
     init_parser.add_argument("--assertion-consumer-url-post", help=f"set the valid redirect URL for the UCS SAML service provider, most likely https://{domainname}/univention/saml/")
+    # add additional parameter for UCS SAML client (in order to avoid dynamic request when UMS not available yet)
+    init_parser.add_argument("--single-logout-service-url-post", help=f"set the logout URL for the UCS SAML service provider, most likely https://{domainname}/univention/saml/slo/")
     init_parser.set_defaults(func=init_keycloak_ucs)
 
     kerberos_config = subparsers.add_parser("kerberos-config", help="LDAP federation Kerberos configuration")
