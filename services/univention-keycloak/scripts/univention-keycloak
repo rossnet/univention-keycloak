@@ -426,7 +426,11 @@ def create_SAML_client(opt):
     print("CREATING KEYCLOAK SAML CLIENT.....")
     if opt.metadata_url:
         client_id = opt.metadata_url
-        endpoints = extract_endpoints_xml(client_id, opt.metadata_file, opt.no_ssl_verify)
+        if opt.no_saml_assertion_request:
+            opt.single_logout_service_url_post = f"https://{opt.umc_saml_sp_server}/univention/saml/slo/"
+            opt.assertion_consumer_url_post =  f"https://{opt.umc_saml_sp_server}/univention/saml/"
+        else:
+            endpoints = extract_endpoints_xml(client_id, opt.metadata_file, opt.no_ssl_verify)
     elif opt.client_id:
         client_id = opt.client_id
         endpoints = {}
@@ -1014,19 +1018,18 @@ def parse_args(args: list[str] | None = None) -> Namespace:
     init_parser.add_argument("--ldap-system-user-dn", required=no_ucr_available, default=f"uid=sys-idp-user,cn=users,{ldap_base}")
     init_parser.add_argument("--ldap-system-user-pwdfile", default="/etc/idp-ldap-user.secret")
     init_parser.add_argument("--host-fqdn", required=no_ucr_available, default=host_fqdn)
-    init_parser.add_argument("--umc-saml-sp-server", metavar="FQDN", required=no_ucr_available, default=umc_saml_sp_server)
     init_parser.add_argument("--domainname", required=no_ucr_available, default=domainname)
     init_parser.add_argument("--locales", required=no_ucr_available, default=ucr.get("locale"))
     init_parser.add_argument("--default-locale", required=no_ucr_available, default=ucr.get("locale/default"))
+    # Was statically enabled before:
+    init_parser.add_argument("--no-starttls", action='store_true', default=False, help="Disables the usage of StartTLS in the communication with the LDAP server, unencrypted traffic will be used.")
+    # Was statically enabled before:
+    init_parser.add_argument("--no-kerberos", action='store_true', default=False, help="Disables the Kerberos support on the LDAP user federation.")
+    init_parser.add_argument("--umc-saml-sp-server", metavar="FQDN", required=no_ucr_available, default=umc_saml_sp_server)
+    init_parser.add_argument("--no-saml-assertion-request", action='store_true', default=False, help="Disables the dynamic request for the UCS SAML assertion and generates the required URLs based on a predefined schema (https://<umc-saml-sp-server>/univention/saml/[metadata|slo/]). Helps if UCS is not available when setting up Keycloak.")
+    init_parser.add_argument("--frontchannel-logout-off", action='store_true', default=False, help="Switch off frontchannelLogout")
     init_parser.add_argument("--check-init-done", help="only check if init has been already executed", default=False, action="store_true")
-    # Was statically "True" before:
-    init_parser.add_argument("--no-starttls", action='store_false', default=True, help="Disables the usage of StartTLS in the communication with the LDAP server, unencrypted traffic will be used.")
-    # Was statically "True" before:
-    init_parser.add_argument("--no-kerberos", action='store_false', default=True, help="Disables the Kerberos support on the LDAP user federation.")
-    # opt.assertion_consumer_url_post = None
-    init_parser.add_argument("--assertion-consumer-url-post", help=f"set the valid redirect URL for the UCS SAML service provider, most likely https://{domainname}/univention/saml/")
-    # add additional parameter for UCS SAML client (in order to avoid dynamic request when UMS not available yet)
-    init_parser.add_argument("--single-logout-service-url-post", help=f"set the logout URL for the UCS SAML service provider, most likely https://{domainname}/univention/saml/slo/")
+
     init_parser.set_defaults(func=init_keycloak_ucs)
 
     kerberos_config = subparsers.add_parser("kerberos-config", help="LDAP federation Kerberos configuration")
@@ -2258,7 +2261,8 @@ def init_keycloak_ucs(opt):
     opt.metadata_file = None
     opt.umc_uid_mapper = True
     opt.single_logout_service_url_post = None
-    opt.frontchannel_logout_off = True
+    # No longer required as this option is set on commandline with a default that enabled FLO
+    # opt.frontchannel_logout_off = True
     opt.name_id_format = None
     opt.idp_initiated_sso_url_name = None
     opt.name = "UMC"
@@ -2277,7 +2281,7 @@ def init_keycloak_ucs(opt):
         "config": {
             "pagination": ["true"],
             "fullSyncPeriod": ["-1"],
-            "startTls": ["true" if opt.no_starttls else "false"],
+            "startTls": ["false" if opt.no_starttls else "true"],
             "connectionPooling": ["true"],
             "usersDn": [opt.ldap_base],
             "cachePolicy": ["MAX_LIFESPAN"],
@@ -2291,7 +2295,7 @@ def init_keycloak_ucs(opt):
             "usernameLDAPAttribute": ["uid"],
             "vendor": ["other"],
             "uuidLDAPAttribute": ["entryUUID"],
-            "allowKerberosAuthentication": ["true" if opt.no_kerberos else "false"],
+            "allowKerberosAuthentication": ["false" if opt.no_kerberos else "true"],
             "kerberosRealm": [opt.kerberos_realm],
             "serverPrincipal": [f"HTTP/{opt.keycloak_fqdn}@{opt.kerberos_realm}"],
             "keyTab": [KERBEROS_KEYTAB_PATH],
